@@ -657,7 +657,7 @@ parse_ext_inst_data(struct ly_ctx *ctx, struct yl_opt *yo, struct cmdline_file *
         return LY_ENOTFOUND;
     }
 
-    if ((ret = lyd_parse_ext_data(yo->ext, NULL, input_f->in, input_f->format, LYD_PARSE_ONLY, 0, tree))) {
+    if ((ret = lyd_parse_ext_data(yo->ext, NULL, input_f->in, input_f->format, LYD_PARSE_ONLY | LYD_PARSE_STRICT, 0, tree))) {
         YLMSG_E("Parsing of extension data failed.")
         return ret;
     }
