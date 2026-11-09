@@ -286,8 +286,12 @@ lydjson_get_snode(struct lyd_json_ctx *lydctx, ly_bool is_attr, const char *pref
         prefix = NULL;
     }
     r = lys_find_child_node(parent ? LYD_CTX(parent) : lydctx->jsonctx->ctx, sparent, mod, prefix, prefix_len,
-            LY_VALUE_JSON, NULL, name, name_len, getnext_opts, snode, ext);
+            LY_VALUE_JSON, NULL, name, name_len, getnext_opts, snode, ext,
+            (parent && parent->schema && (parent->schema->nodetype == LYS_ANYDATA)) ? lydctx->anchor : NULL);
     LY_CHECK_RET(r && (r != LY_ENOT), r);
+    if (parent && parent->schema && (parent->schema->nodetype == LYS_ANYDATA)) {
+        lydctx->anchor = NULL;
+    }
 
     if (!r) {
         /* check that schema node is valid and can be used */
@@ -1402,6 +1406,9 @@ lydjson_parse_any(struct lyd_json_ctx *lydctx, const struct lysc_node *snode, co
     }
 
 cleanup:
+    if (snode->nodetype == LYS_ANYDATA) {
+        lydctx->anchor = NULL;
+    }
     lydctx->parse_opts = prev_parse_opts;
     lydctx->int_opts = prev_int_opts;
     lydctx->any_schema = NULL;
@@ -2021,7 +2028,7 @@ cleanup:
 LY_ERR
 lyd_parse_json(const struct ly_ctx *ctx, struct lyd_node *parent, const struct lysc_node *schema,
         struct lyd_node **first_p, struct ly_in *in, uint32_t parse_opts, uint32_t val_opts, uint32_t int_opts,
-        struct ly_set *parsed, struct lyd_ctx **lydctx_p)
+        struct ly_set *parsed, struct lyd_ctx **lydctx_p, const char *anchor)
 {
     LY_ERR r, rc = LY_SUCCESS;
     struct lyd_json_ctx *lydctx = NULL;
@@ -2031,6 +2038,7 @@ lyd_parse_json(const struct ly_ctx *ctx, struct lyd_node *parent, const struct l
     LY_CHECK_GOTO(rc, cleanup);
 
     lydctx->int_opts = int_opts;
+    lydctx->anchor = anchor;
 
     /* find the operation node if it exists already */
     LY_CHECK_GOTO(rc = lyd_parser_find_operation(parent, int_opts, &lydctx->op_node), cleanup);
@@ -2161,7 +2169,7 @@ cleanup:
 LY_ERR
 lyd_parse_json_restconf(const struct ly_ctx *ctx, struct lyd_node *parent, struct lyd_node **first_p, struct ly_in *in,
         uint32_t parse_opts, uint32_t val_opts, enum lyd_type data_type, struct lyd_node **envp, struct ly_set *parsed,
-        struct lyd_ctx **lydctx_p)
+        struct lyd_ctx **lydctx_p, const char *anchor)
 {
     LY_ERR rc = LY_SUCCESS, r;
     struct lyd_json_ctx *lydctx = NULL;
@@ -2178,6 +2186,7 @@ lyd_parse_json_restconf(const struct ly_ctx *ctx, struct lyd_node *parent, struc
     /* init context */
     rc = lyd_parse_json_init(ctx, NULL, in, parse_opts, val_opts, NULL, &lydctx);
     LY_CHECK_GOTO(rc, cleanup);
+    lydctx->anchor = anchor;
 
     switch (data_type) {
     case LYD_TYPE_RPC_RESTCONF:

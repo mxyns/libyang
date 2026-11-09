@@ -955,6 +955,18 @@ lyb_parse_schema_hash(struct lyd_lyb_ctx *lybctx, const struct lysc_node *sparen
 
     getnext_opts = lybctx->int_opts & LYD_INTOPT_REPLY ? LYS_GETNEXT_OUTPUT : 0;
 
+    if ((!sparent || (sparent->nodetype == LYS_ANYDATA)) && !mod &&
+            (lybctx->int_opts & LYD_INTOPT_ANY_ANCHOR)) {
+        sibling = lys_find_path(lybctx->parse_ctx->ctx, NULL, lybctx->anchor, getnext_opts);
+        if (!sibling || !lyb_is_schema_hash_match((struct lysc_node *)sibling, hash, hash_count)) {
+            LOGERR(lybctx->parse_ctx->ctx, LY_EINT, "Failed to find matching hash for schema anchor \"%s\".",
+                    lybctx->anchor);
+            return LY_EINT;
+        }
+        *snode = sibling;
+        return LY_SUCCESS;
+    }
+
     /* find our node with matching hashes */
     sibling = NULL;
     while (1) {
@@ -1307,6 +1319,9 @@ lyb_parse_node_any(struct lyd_lyb_ctx *lybctx, struct lyd_node *parent, const st
         prev_int_opts = lybctx->int_opts;
         lybctx->parse_opts = LYD_PARSE_ONLY | LYD_PARSE_OPAQ;
         lybctx->int_opts = LYD_INTOPT_ANY | LYD_INTOPT_WITH_SIBLINGS;
+        if (lybctx->anchor && (snode->nodetype == LYS_ANYDATA)) {
+            lybctx->int_opts |= LYD_INTOPT_ANY_ANCHOR;
+        }
 
         /* parse LYB siblings, restore options */
         rc = lyb_parse_siblings(lybctx, NULL, 0, NULL, &tree, NULL);
@@ -1338,6 +1353,9 @@ lyb_parse_node_any(struct lyd_lyb_ctx *lybctx, struct lyd_node *parent, const st
     LY_CHECK_GOTO(rc = lyb_finish_node(lybctx, node, ext, &meta, parsed), cleanup);
 
 cleanup:
+    if (snode->nodetype == LYS_ANYDATA) {
+        lybctx->anchor = NULL;
+    }
     lyd_free_meta_siblings(meta);
     lyd_free_siblings(tree);
     free(value);
@@ -1612,6 +1630,19 @@ lyb_parse_node(struct lyd_lyb_ctx *lybctx, struct lyd_node *parent, struct lyd_n
         goto cleanup;
     }
 
+    if (snode && (!parent || (parent->schema && (parent->schema->nodetype == LYS_ANYDATA))) &&
+            (lybctx->int_opts & LYD_INTOPT_ANY_ANCHOR) &&
+            (snode != lys_find_path(lybctx->parse_ctx->ctx, NULL, lybctx->anchor, 0))) {
+        LOGERR(lybctx->parse_ctx->ctx, LY_EINT, "Failed to find matching hash for schema anchor \"%s\".",
+                lybctx->anchor);
+        rc = LY_EINT;
+        goto cleanup;
+    }
+    if (lybctx->int_opts & LYD_INTOPT_ANY_ANCHOR) {
+        lybctx->anchor = NULL;
+        lybctx->int_opts &= ~LYD_INTOPT_ANY_ANCHOR;
+    }
+
     if (!snode) {
         rc = lyb_parse_node_opaq(lybctx, parent, first_p, parsed);
     } else if (snode->nodetype & LYS_LEAFLIST) {
@@ -1768,7 +1799,8 @@ lyb_parse_header(struct lyd_lyb_ctx *lybctx)
 
 LY_ERR
 lyd_parse_lyb(const struct ly_ctx *ctx, struct lyd_node *parent, struct lyd_node **first_p, struct ly_in *in,
-        uint32_t parse_opts, uint32_t val_opts, uint32_t int_opts, struct ly_set *parsed, struct lyd_ctx **lydctx_p)
+        uint32_t parse_opts, uint32_t val_opts, uint32_t int_opts, struct ly_set *parsed, struct lyd_ctx **lydctx_p,
+        const char *anchor)
 {
     LY_ERR rc = LY_SUCCESS;
     struct lyd_lyb_ctx *lybctx = NULL;
@@ -1791,6 +1823,7 @@ lyd_parse_lyb(const struct ly_ctx *ctx, struct lyd_node *parent, struct lyd_node
     lybctx->parse_opts = parse_opts;
     lybctx->val_opts = val_opts;
     lybctx->int_opts = int_opts;
+    lybctx->anchor = anchor;
     lybctx->free = lyb_parse_ctx_free;
 
     /* find the operation node if it exists already */

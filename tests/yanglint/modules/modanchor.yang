@@ -1,0 +1,29 @@
+module modanchor {
+  yang-version 1.1;
+  namespace "urn:yanglint:modanchor";
+  prefix ma;
+
+  container message {
+    leaf target {
+      type string;
+    }
+    anydata value;
+  }
+  container x {
+    leaf a {
+      type uint8 {
+        range "0";
+      }
+    }
+    container y {
+      leaf deep {
+        type string;
+      }
+    }
+  }
+  leaf a {
+    type uint8 {
+      range "1";
+    }
+  }
+}

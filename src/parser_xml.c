@@ -594,8 +594,12 @@ lydxml_subtree_get_snode(struct lyd_xml_ctx *lydctx, const struct lyd_node *pare
         prefix = NULL;
     }
     r = lys_find_child_node(parent ? LYD_CTX(parent) : ctx, sparent, NULL, prefix, prefix_len, LY_VALUE_XML,
-            &lydctx->xmlctx->ns, name, name_len, getnext_opts, snode, ext);
+            &lydctx->xmlctx->ns, name, name_len, getnext_opts, snode, ext,
+            (parent && parent->schema && (parent->schema->nodetype == LYS_ANYDATA)) ? lydctx->anchor : NULL);
     LY_CHECK_RET(r && (r != LY_ENOT), r);
+    if (parent && parent->schema && (parent->schema->nodetype == LYS_ANYDATA)) {
+        lydctx->anchor = NULL;
+    }
 
     if (!r) {
         /* check that schema node is valid and can be used */
@@ -986,6 +990,9 @@ lydxml_subtree_any(struct lyd_xml_ctx *lydctx, const struct lysc_node *snode, co
     }
 
 cleanup:
+    if (snode->nodetype == LYS_ANYDATA) {
+        lydctx->anchor = NULL;
+    }
     lydctx->parse_opts = prev_parse_opts;
     lydctx->int_opts = prev_int_opts;
     free(val);
@@ -1225,7 +1232,8 @@ cleanup:
 
 LY_ERR
 lyd_parse_xml(const struct ly_ctx *ctx, struct lyd_node *parent, struct lyd_node **first_p, struct ly_in *in,
-        uint32_t parse_opts, uint32_t val_opts, uint32_t int_opts, struct ly_set *parsed, struct lyd_ctx **lydctx_p)
+        uint32_t parse_opts, uint32_t val_opts, uint32_t int_opts, struct ly_set *parsed, struct lyd_ctx **lydctx_p,
+        const char *anchor)
 {
     LY_ERR r, rc = LY_SUCCESS;
     struct lyd_xml_ctx *lydctx;
@@ -1243,6 +1251,7 @@ lyd_parse_xml(const struct ly_ctx *ctx, struct lyd_node *parent, struct lyd_node
     lydctx->parse_opts = parse_opts;
     lydctx->val_opts = val_opts;
     lydctx->int_opts = int_opts;
+    lydctx->anchor = anchor;
     lydctx->free = lyd_xml_ctx_free;
 
     /* find the operation node if it exists already */
@@ -1457,7 +1466,7 @@ cleanup:
 LY_ERR
 lyd_parse_xml_netconf(const struct ly_ctx *ctx, struct lyd_node *parent, struct lyd_node **first_p, struct ly_in *in,
         uint32_t parse_opts, uint32_t val_opts, enum lyd_type data_type, struct lyd_node **envp, struct ly_set *parsed,
-        struct lyd_ctx **lydctx_p)
+        struct lyd_ctx **lydctx_p, const char *anchor)
 {
     LY_ERR rc = LY_SUCCESS;
     struct lyd_xml_ctx *lydctx;
@@ -1475,6 +1484,7 @@ lyd_parse_xml_netconf(const struct ly_ctx *ctx, struct lyd_node *parent, struct 
     LY_CHECK_GOTO(rc = lyxml_ctx_new(ctx, in, &lydctx->xmlctx), cleanup);
     lydctx->parse_opts = parse_opts;
     lydctx->val_opts = val_opts;
+    lydctx->anchor = anchor;
     lydctx->free = lyd_xml_ctx_free;
 
     switch (data_type) {

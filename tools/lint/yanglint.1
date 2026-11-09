@@ -144,6 +144,12 @@ the reply.
 .BR "\-m\fR,\fP \-\^\-merge"
 Merge input data files into a single tree and validate at once. The option has effect only for 'data' and 'config' TYPEs.
 .TP
+.BR "\-a \fIPATH\fP\fR,\fP \-\^\-anchor=\fIPATH\fP"
+This option does not itself enable strict anydata parsing; use -A to enable it.
+Parse anydata payload roots using the schema node at absolute PATH. PATH uses module names as prefixes.
+Only the first anydata instance encountered uses the anchor. The payload contains the anchored node itself,
+not just its children; anyxml is unchanged. For NETCONF replies, the anchor applies to the reply, not the source RPC.
+.TP
 .BR "\-y\fR,\fP \-\^\-yang\-library"
 Load and implement internal 'ietf-yang-library' YANG module. Note that this module includes definitions of mandatory
 state data that can result in unexpected data validation errors.

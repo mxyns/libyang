@@ -1,0 +1,93 @@
+source [expr {[info exists ::env(TESTS_DIR)] ? "$env(TESTS_DIR)/non-interactive/ly.tcl" : "ly.tcl"}]
+
+set mdir $::env(YANG_MODULES_DIR)
+set ddir $::env(TESTS_DIR)/data
+
+set patch_module [::tcltest::makeFile {
+module patch-operation {
+  yang-version 1.1;
+  namespace "urn:patch-operation";
+  prefix po;
+  import ietf-yang-patch { prefix yp; }
+  container configuration { container settings { leaf limit { type uint8; } } }
+  container settings { leaf limit { type string; } }
+  rpc apply-patch { input { uses yp:yang-patch; } }
+}
+} patch-operation.yang]
+set patch_json [::tcltest::makeFile {
+{"patch-operation:apply-patch":{"yang-patch":{"patch-id":"p1","edit":[{"edit-id":"e1","operation":"replace","target":"/patch-operation:configuration/settings","value":{"patch-operation:settings":{"limit":42}}}]}}}
+} patch-operation.json]
+set patch_xml [::tcltest::makeFile {
+<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="1">
+  <apply-patch xmlns="urn:patch-operation"><yang-patch><patch-id>p1</patch-id><edit>
+    <edit-id>e1</edit-id><operation>replace</operation><target>/patch-operation:configuration/settings</target>
+    <value><settings><limit>42</limit></settings></value>
+  </edit></yang-patch></apply-patch>
+</rpc>
+} patch-operation.xml]
+
+test data_anchor_long {anchor selects the exact non-root schema node} {
+    ly_cmd "-A --anchor=/modanchor:x/a -e -f json $mdir/modanchor.yang $ddir/modanchor.json" "\"a\": 0"
+} {}
+
+test data_anchor_short {short anchor option} {
+    ly_cmd "-A -a /modanchor:x/a -e $mdir/modanchor.yang $ddir/modanchor.json"
+} {}
+
+test data_anchor_default {without an anchor anydata remains unchanged} {
+    ly_cmd "-e $mdir/modanchor.yang $ddir/modanchor.json"
+} {}
+
+test data_anchor_without_strict {anchor works without strict anydata parsing} {
+    ly_cmd "-a /modanchor:x/a -e -f json $mdir/modanchor.yang $ddir/modanchor.json" "\"a\": 0"
+} {}
+
+test data_anchor_strict_without_anchor {strict parsing retains its original top-level schema lookup} {
+    ly_cmd_err "-A -e $mdir/modanchor.yang $ddir/modanchor.json" "Unsatisfied range"
+} {}
+
+test data_anchor_wrong_schema {different schema node has different value restrictions} {
+    ly_cmd_err "-A --anchor=/modanchor:a -e $mdir/modanchor.yang $ddir/modanchor.json" "Unsatisfied range"
+} {}
+
+test data_anchor_deep {payload key must match exact anchored node} {
+    ly_cmd_err "-A --anchor=/modanchor:x/a -e $mdir/modanchor.yang $ddir/modanchor-deep.json" "not found"
+} {}
+
+test data_anchor_invalid {unknown schema path} {
+    ly_cmd_err "-A --anchor=/modanchor:missing -e $mdir/modanchor.yang $ddir/modanchor.json" "Invalid anydata schema anchor"
+} {}
+
+test data_anchor_relative {anchor must be absolute} {
+    ly_cmd_err "-A --anchor=modanchor:x/a $mdir/modanchor.yang $ddir/modanchor.json" "must be an absolute schema path"
+} {}
+
+test data_anchor_empty {empty anchor is not treated as absent} {
+    ly_cmd_err "-A --anchor= $mdir/modanchor.yang $ddir/modanchor.json" "must be an absolute schema path"
+} {}
+
+test data_anchor_merge {anchor works with merged data} {
+    ly_cmd "-a /modanchor:x/a -m -e -f json $mdir/modanchor.yang $ddir/modanchor.json" "\"a\": 0"
+} {}
+
+test data_anchor_xpath {anchor works with XPath selection} {
+    ly_cmd "-a /modanchor:x/a -E /modanchor:message -e $mdir/modanchor.yang $ddir/modanchor.json" "container \"message\""
+} {}
+
+test data_anchor_operation {anchor selects a YANG Patch target in RPC input} {
+    ly_cmd "-p $::env(TESTS_DIR)/../modules/yang -a /patch-operation:configuration/settings -t rpc -f json $patch_module $patch_json" "\"limit\": 42"
+} {}
+
+test data_anchor_netconf_operation {anchor selects a YANG Patch target in a NETCONF RPC} {
+    ly_cmd "-p $::env(TESTS_DIR)/../modules/yang -a /patch-operation:configuration/settings -t nc-rpc -f xml $patch_module $patch_xml" "<limit>42</limit>"
+} {}
+
+test data_anchor_operation_invalid {invalid operation anchor is rejected} {
+    ly_cmd_err "-p $::env(TESTS_DIR)/../modules/yang -a /patch-operation:missing -t rpc $patch_module $patch_json" "Invalid anydata schema anchor"
+} {}
+
+test data_anchor_duplicate {anchor may be specified only once} {
+    ly_cmd_err "-a /modanchor:x/a -a /modanchor:a $mdir/modanchor.yang $ddir/modanchor.json" "cannot be set multiple times"
+} {}
+
+cleanupTests
